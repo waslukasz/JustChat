@@ -1,0 +1,148 @@
+﻿@page "/chatroom";
+@inject NavigationManager navigationManager;
+@using Microsoft.AspNetCore.SignalR.Client;
+
+<section>
+    <div class="jc__brand">
+        <h1>JustChat</h1>
+        <p>Chatting made simple.</p>
+    </div>
+
+    <div class="jc__chat">
+        @foreach (var msg in _messages)
+        {
+            if (msg.IsNotice)
+            {
+                <div class="jc__notice">
+                    <div class="jc__body">@msg.Body</div>
+                </div>
+            }
+            else
+            {
+                <div class="jc__message">
+                    <div class="jc__username">@msg.Username</div>
+                    <div class="jc__body">@msg.Body</div>
+                </div>
+            }
+        }
+    </div>
+
+    @if (!_isChatting)
+    {
+        <div class="jc__options jc__options--login">
+            <div>Please enter your username:</div>
+            <input class="jc__input-username" type="text" maxlength="32" placeholder="Enter username here..." @bind="_username">
+            <button class="jc__send" onclick="@Chat">Connect</button>
+
+            @if (_message != null)
+            {
+                <div class="jc__error">@_message</div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="jc__options">
+            <div>You are connected as <span class="jc__username">@_username</span>.</div>
+            <textarea class="jc__new-message" placeholder="Enter message here..." maxlength="188" @bind="@_newMessage"></textarea>
+            <button class="jc__send" @onclick="@(() => SendAsync(_newMessage))">Send message</button>
+            <button class="jc__disconnect" onclick="@DisconnectAsync">Disconnect</button>
+        </div>
+    }
+</section>
+
+@code
+{
+    private bool _isChatting = false;
+    private string _username;
+    private string _message;
+    private string _newMessage;
+    private List<Message> _messages = new List<Message>();
+
+    private string? _hubUrl;
+    private HubConnection _hubConnection;
+
+    public async Task Chat()
+    {
+        if (string.IsNullOrWhiteSpace(_username))
+        {
+            _message = "Please enter a username.";
+            return;
+        }
+
+        try
+        {
+            _isChatting = true;
+            await Task.Delay(1);
+
+            _messages.Clear();
+
+            string baseUrl = navigationManager.BaseUri;
+
+            _hubUrl = baseUrl.TrimEnd('/') + JustChatHub.HubUrl;
+
+            _hubConnection = new HubConnectionBuilder()
+                .WithUrl(_hubUrl)
+                .Build();
+
+            _hubConnection.On<string, string>("Broadcast", BroadcastMessage);
+
+            await _hubConnection.StartAsync();
+
+            await SendAsync($"[Notice] {_username} joined chat room.");
+        }
+        catch (Exception e)
+        {
+            _message = $"ERROR: Failed to start chat client: {e.Message}";
+            _isChatting = false;
+        }
+    }
+
+    private void BroadcastMessage(string username, string message)
+    {
+        bool isMine = username.Equals(_username, StringComparison.OrdinalIgnoreCase);
+
+        _messages.Add(new Message(username, message, isMine));
+
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task DisconnectAsync()
+    {
+        if (_isChatting)
+        {
+            await SendAsync($"[Notice] {_username} left chat room.");
+
+            await _hubConnection.StopAsync();
+            await _hubConnection.DisposeAsync();
+            _hubConnection = null;
+            _isChatting = false;
+        }
+    }
+
+    private async Task SendAsync(string message)
+    {
+        if (_isChatting && !string.IsNullOrWhiteSpace(message))
+        {
+            await _hubConnection.SendAsync("Broadcast", _username, message);
+            _newMessage = string.Empty;
+        }
+    }
+
+    private class Message
+    {
+        public string Username { get; set; }
+        public string Body { get; set; }
+        public bool Mine { get; set; }
+
+        public Message(string username, string body, bool mine)
+        {
+            Username = username;
+            Body = body;
+            Mine = mine;
+        }
+
+        public bool IsNotice => Body.StartsWith("[Notice]");
+        public string CSS => Mine ? "sent" : "received";
+    }
+}
