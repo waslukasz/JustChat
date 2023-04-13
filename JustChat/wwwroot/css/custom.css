@@ -66,7 +66,9 @@ section {
     box-sizing: border-box;
     border: 3px solid #000;
     overflow-y: auto;
+    overflow-x: hidden;
     margin: 32px;
+    position: relative;
 }
 
 .jc__chat::-webkit-scrollbar {
@@ -92,6 +94,11 @@ section {
     box-sizing: border-box;
     padding: .7em;
     text-align: justify;
+    position: relative;
+}
+
+.jc__body {
+    overflow-wrap: anywhere;
 }
 
 .jc__notice {
